@@ -1,5 +1,4 @@
 import type { Context, Middleware } from "https://deno.land/x/oak/mod.ts"
-import type { DenoStdInternalError } from "https://deno.land/std@0.69.0/_util/assert.ts";
 
 const tscExt = /(.*\.)tsc/;
 const jsExt = /(.*\.)js/;
@@ -12,84 +11,7 @@ interface tscompileOptions {
     cache?: boolean,
     userRecompile?: boolean,
     debug?: boolean,
-}
-
-export function tscompileMiddleware(options: tscompileOptions): Middleware {
-
-    const cache: Map<string, [number, string]> = new Map<string, [number, string]>();
-
-    let tscTest: (path: string) => string | null;
-    let jsTest: (path: string) => string | null;
-
-    if(options.tscExt){
-        tscTest = (path) => {
-            let matchExt = path.match(tscExt);
-            if (matchExt && matchExt[1]) {
-                let matchPath = matchExt[1].match(options.matchingDir);
-                if (matchPath && matchPath[1]) {
-                    let file = `${options.fileRoot}/${matchPath[1]}ts`;
-                    return file;
-                }
-            }
-            return null;
-        }
-    } else {
-        tscTest = () => {return null};
-    }
-
-    if (options.tscExt) {
-        jsTest = (path) => {
-            let matchExt = path.match(jsExt);
-            if (matchExt && matchExt[1]) {
-                let matchPath = matchExt[1].match(options.matchingDir);
-                if (matchPath && matchPath[1]) {
-                    let file = `${options.fileRoot}/${matchPath[1]}ts`;
-                    return file;
-                }
-            }
-            return null;
-        }
-    } else {
-        jsTest = () => {return null};
-    }
-
-    let genResp: (file: string, ctx: Context) => Promise<string>;
-    if(options.cache){
-        genResp = async (file, ctx) => {
-            let cached = cache.get(file);
-            let v = ctx.request.url.searchParams.get("v");
-            if (!cached) {
-                const [diagnostics, emit] = await Deno.bundle(file);
-                cached = [Date.now(), emit]
-                cache.set(file, cached);
-            }
-            return cached[1];
-        }
-    } else {
-        genResp = async (file, ctx) => {
-            const [diagnostics, emit] = await Deno.bundle(file);
-            return emit;
-        }
-    }
-
-    return async function middleware(
-        ctx: Context,
-        next: () => Promise<void>
-    ): Promise<void> {
-        let path = ctx.request.url.href;
-        if (options.matchingDir.test(path)) {
-            let file: string | null = null;
-            file = file || tscTest(path);
-            file = file || jsTest(path);
-            if(file){
-                let emit = genResp(file, ctx);
-                ctx.response.body = emit;
-                ctx.response.type = "application/ecmascript";
-                return;
-            }
-        }
-        return next();
-    };
+    precompile?: Array<string>,
 }
 
 declare type tester = (path: string) => string | null;
@@ -110,6 +32,11 @@ export class TsCompile {
     constructor(options: tscompileOptions) {
         this.options = options;
         this.refresh();
+        if(options.precompile && options.cache){
+            for (const file of options.precompile) {
+                this.compiler(file, 0);
+            }
+        }
     }
 
     public refresh() {
