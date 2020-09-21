@@ -1,10 +1,12 @@
 import type { Context, Middleware } from "https://deno.land/x/oak/mod.ts"
 
 const tscExt = /(.*\.)tsc/;
+const tsExt = /(.*\.)ts/;
 const jsExt = /(.*\.)js/;
 
 interface tscompileOptions {
     tscExt?: boolean,
+    tsExt?: boolean,
     jsExt?: boolean,
     matchingDir: RegExp,
     fileRoot: string,
@@ -24,6 +26,7 @@ interface cacheItem {
 export class TsCompile {
     public cache: Map<string, cacheItem> = new Map<string, cacheItem>();
     private tscTester: tester = () => { return null };
+    private tsTester: tester = () => { return null };
     private jsTester: tester = ()=>{return null};
     private debug = (ctx: Context, debug: Array<Deno.DiagnosticItem> | undefined): void => {};
     private compiler: (file: string, v: number) => Promise<cacheItem> = async() => {return {timestamp: 0, emit: "", diag: undefined}};
@@ -41,6 +44,7 @@ export class TsCompile {
 
     public refresh() {
         this.tscMode();
+        this.tsMode();
         this.jsMode();
         this.compileMode();
         this.debugMode();
@@ -53,6 +57,7 @@ export class TsCompile {
         if (path && path[1]) {
             let file: string | null = null;
             file = file || this.tscTester(path[1]);
+            file = file || this.tsTester(path[1]);
             file = file || this.jsTester(path[1]);
             if (file) {
                 let v = parseInt(ctx.request.url.searchParams.get("v") || "0");
@@ -77,6 +82,20 @@ export class TsCompile {
             }
         } else {
             this.tscTester = () => { return null };
+        }
+    }
+
+    public tsMode() {
+        if (this.options.tsExt) {
+            this.tsTester = (path) => {
+                let matchExt = path.match(tsExt);
+                if (matchExt && matchExt[1]) {
+                    return matchExt[1];
+                }
+                return null;
+            }
+        } else {
+            this.tsTester = () => { return null };
         }
     }
 
